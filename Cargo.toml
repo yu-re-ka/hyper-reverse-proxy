@@ -1,5 +1,5 @@
 [package]
-name = "hyper-reverse-proxy"
+name = "httproxide-hyper-reverse-proxy"
 version = "0.5.2-dev"
 authors = [
   "Brendan Zabarauskas <bjzaba@yahoo.com.au>",
@@ -7,7 +7,7 @@ authors = [
   "Jan Kantert <jan-hyper-reverse-proxy@kantert.net>",
 ]
 license = "Apache-2.0"
-description = "A simple reverse proxy, to be used with Hyper and Tokio."
+description = "temporary fork of hyper-reverse-proxy"
 homepage = "https://github.com/felipenoris/hyper-reverse-proxy"
 documentation = "https://docs.rs/hyper-reverse-proxy"
 repository = "https://github.com/felipenoris/hyper-reverse-proxy"
@@ -18,9 +18,9 @@ edition = "2018"
 
 include = ["Cargo.toml", "LICENSE", "src/**/*"]
 
-[[bench]]
-name="internal"
-harness = false
+#[[bench]]
+#name="internal"
+#harness = false
 
 [dependencies]
 hyper = { version = "0.14.18", features = ["client"] }
