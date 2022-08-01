@@ -111,6 +111,8 @@
 #[macro_use]
 extern crate tracing;
 
+use hyper::body::HttpBody;
+use hyper::client::connect::Connect;
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
@@ -375,12 +377,18 @@ fn create_proxied_request<B>(
     Ok(request)
 }
 
-pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync + 'static>(
+pub async fn call<'a, C, B>(
     client_ip: IpAddr,
     forward_uri: &str,
-    mut request: Request<Body>,
-    client: &'a Client<T>,
-) -> Result<Response<Body>, ProxyError> {
+    mut request: Request<B>,
+    client: &'a Client<C, B>,
+) -> Result<Response<Body>, ProxyError>
+where
+    C: Connect + Clone + Send + Sync + 'static,
+    B: HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     info!(
         "Received proxy call from {} to {}, client: {}",
         request.uri().to_string(),
@@ -454,12 +462,18 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
     }
 }
 
-pub struct ReverseProxy<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> {
-    client: Client<T>,
+pub struct ReverseProxy<C, B> {
+    client: Client<C, B>,
 }
 
-impl<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> ReverseProxy<T> {
-    pub fn new(client: Client<T>) -> Self {
+impl<C, B> ReverseProxy<C, B>
+where
+    C: Connect + Clone + Send + Sync + 'static,
+    B: HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    pub fn new(client: Client<C, B>) -> Self {
         Self { client }
     }
 
@@ -467,9 +481,9 @@ impl<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> Reverse
         &self,
         client_ip: IpAddr,
         forward_uri: &str,
-        request: Request<Body>,
+        request: Request<B>,
     ) -> Result<Response<Body>, ProxyError> {
-        call::<T>(client_ip, forward_uri, request, &self.client).await
+        call::<C, B>(client_ip, forward_uri, request, &self.client).await
     }
 }
 
