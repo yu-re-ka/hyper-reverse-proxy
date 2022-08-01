@@ -402,37 +402,50 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
     if response.status() == StatusCode::SWITCHING_PROTOCOLS {
         let response_upgrade_type = get_upgrade_type(response.headers());
 
-        if request_upgrade_type == response_upgrade_type {
-            if let Some(request_upgraded) = request_upgraded {
-                let mut response_upgraded = response
-                    .extensions_mut()
-                    .remove::<OnUpgrade>()
-                    .expect("response does not have an upgrade extension")
-                    .await?;
-
-                debug!("Responding to a connection upgrade response");
-
-                tokio::spawn(async move {
-                    let mut request_upgraded =
-                        request_upgraded.await.expect("failed to upgrade request");
-
-                    copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
-                        .await
-                        .expect("coping between upgraded connections failed");
-                });
-
-                Ok(response)
-            } else {
-                Err(ProxyError::UpgradeError(
+        if request_upgrade_type != response_upgrade_type {
+            return Err(ProxyError::UpgradeError(format!(
+                "backend tried to switch to protocol {:?} when {:?} was requested",
+                response_upgrade_type, request_upgrade_type
+            )));
+        };
+        let request_upgraded = match request_upgraded {
+            Some(v) => v,
+            None => {
+                return Err(ProxyError::UpgradeError(
                     "request does not have an upgrade extension".to_string(),
                 ))
             }
-        } else {
-            Err(ProxyError::UpgradeError(format!(
-                "backend tried to switch to protocol {:?} when {:?} was requested",
-                response_upgrade_type, request_upgrade_type
-            )))
-        }
+        };
+        let mut response_upgraded = match response.extensions_mut().remove::<OnUpgrade>() {
+            Some(v) => v.await?,
+            None => {
+                return Err(ProxyError::UpgradeError(
+                    "response does not have an upgrade extension".to_string(),
+                ))
+            }
+        };
+
+        debug!("Responding to a connection upgrade response");
+        tokio::spawn(async move {
+            let mut request_upgraded = match request_upgraded.await {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("failed to upgrade request: {}", e);
+                    return;
+                }
+            };
+
+            if let Some(err) = copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
+                .await
+                .err()
+            {
+                if err.kind() != std::io::ErrorKind::UnexpectedEof {
+                    warn!("coping between upgraded connections failed: {}", err);
+                }
+            }
+        });
+
+        Ok(response)
     } else {
         let proxied_response = create_proxied_response(response);
 
